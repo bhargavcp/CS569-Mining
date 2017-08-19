@@ -9,6 +9,7 @@ bothSentimentsMerged = {
     'posNeu': 0,
     'negNeu': 0,
     'sameEvenAfterAverage': 0,
+    'allThreeSameEvenAfterAverage': 0,
     'sameEvenAfterAverageForAuthor': 0,
     'posNegBothOccurredForAuthor': 0
 }
@@ -21,7 +22,7 @@ bothSentimentsNotMerged = {
 }
 
 def main():
-    gh = GitHub('ams04', 'd972c116bb8350b56a8c2e9baee9042eb391e0a9')
+    gh = GitHub('GitID', 'AccessKey')
     projectList = {
         'statsmodels': 'statsmodels',
         'webpack': 'webpack',
@@ -65,9 +66,9 @@ def main():
                 otherComments = list(set(pullsWithComments[key]['otherComments']))
 
                 if None in authorComments:
-                    authorComments.remove(None)
+                    authorComments = [comment for comment in authorComments if comment is not None]
                 if None in otherComments:
-                    otherComments.remove(None)
+                    otherComments = [comment for comment in otherComments if comment is not None]
 
                 if 'merged' in pull.keys():
                     merged = pull['merged']
@@ -102,9 +103,7 @@ def getCollectiveCommentsSentiment(commentsObj, comments, merged, otherComments,
         collectiveSentimentList.append(tuple([sentimentValue, sentiment[sentimentValue]]))
 
     mostPowerfulSentiment = getMostPowerfulSentiment(commentsObj, collectiveSentimentList, merged, authorName, otherComments)
-
     return mostPowerfulSentiment
-#[('neu', 0.804), ('neu', 0.872), ('neu', 0.905), ('neu', 0.826), ('neu', 0.684), ('neu', 0.651), ('neu', 0.638), ('neu', 0.936), ('neu', 0.715), ('neu', 1.0), ('neu', 0.726)]
 
 def getMostPowerfulSentiment(commentsObj, collectiveSentimentList, merged, authorName, otherComments):
     counts = {
@@ -121,105 +120,61 @@ def getMostPowerfulSentiment(commentsObj, collectiveSentimentList, merged, autho
         elif sentiment[0] == 'neg':
             counts['neg'] += 1
 
-    if otherComments:
+    if len([senti for senti in counts.values() if senti is not 0]) > 1 and otherComments:
         if merged:
-            updateBothSentimentsMergedObject(counts)
-        if not merged:
-            updateBothSentimentsNotMergedObject(counts)
+            updateSentimentDictsBasedOnMergedStatus(counts, bothSentimentsMerged)
+        else:
+            updateSentimentDictsBasedOnMergedStatus(counts, bothSentimentsNotMerged)
 
     if counts['neu'] == counts['pos'] == counts['neg']:
-        return getAverages(otherComments, commentsObj, merged, collectiveSentimentList, 'neu', None, 'pos', None, 'neg', authorName)
+        return getAverages(otherComments, commentsObj, collectiveSentimentList, 'neu', 'pos', 'neg', authorName, merged)
 
     elif counts['pos'] < counts['neu'] and counts['neu'] == counts['neg']:
-        return getAverages(otherComments, commentsObj, merged, collectiveSentimentList, 'neu', counts['neu'], 'neg', counts['neg'], None, authorName)
+        return getAverages(otherComments, commentsObj, collectiveSentimentList, 'neu', 'neg', None, authorName, merged)
 
     elif counts['neg'] < counts['neu'] and counts['neu'] == counts['pos']:
-        return getAverages(otherComments, commentsObj, merged, collectiveSentimentList, 'neu', counts['neu'], 'pos', counts['pos'], None, authorName)
+        return getAverages(otherComments, commentsObj, collectiveSentimentList, 'neu', 'pos', None, authorName, merged)
 
     elif counts['neu'] < counts['neg'] and counts['neg'] == counts['pos']:
-        return getAverages(otherComments, commentsObj, merged, collectiveSentimentList, 'neg', counts['neg'], 'pos', counts['pos'], None, authorName)
+        return getAverages(otherComments, commentsObj, collectiveSentimentList, 'neg', 'pos', None, authorName, merged)
     else:
         return max(counts, key=lambda i: counts[i])
 
-def updateBothSentimentsMergedObject(counts):
-    if counts['pos'] > 0 and counts['neg'] > 0:
-        bothSentimentsMerged['posNeg'] += 1
-    elif counts['pos'] > 0 and counts['neu'] > 0:
-        bothSentimentsMerged['posNeu'] += 1
-    elif counts['neg'] > 0 and counts['neu'] > 0:
-        bothSentimentsMerged['negNeu'] += 1
-
-def updateBothSentimentsNotMergedObject(counts):
-    if counts['pos'] > 0 and counts['neg'] > 0:
-        bothSentimentsNotMerged['posNeg'] += 1
-    elif counts['pos'] > 0 and counts['neu'] > 0:
-        bothSentimentsNotMerged['posNeu'] += 1
-    elif counts['neg'] > 0 and counts['neu'] > 0:
-        bothSentimentsNotMerged['negNeu'] += 1
-
-def getAverages(otherComments, commentsObj, merged, collectiveSentimentList, sentiment1, count1 = None, sentiment2 = None, count2 = None, sentiment3 = None,
-                authorName = None):
+def getAverages(otherComments, commentsObj, collectiveSentimentList, sentiment1, sentiment2, sentiment3, authorName, merged):
     if sentiment3:
         sentimentObj = {
             sentiment1: 0,
             sentiment2: 0,
             sentiment3: 0
         }
+        sentimentObj.pop(None) if None in sentimentObj.keys() else ''
+
         for sentiment in collectiveSentimentList:
             if sentiment[0] == sentiment1:
                 sentimentObj[sentiment1] += sentiment[1]
             elif sentiment[0] == sentiment2:
                 sentimentObj[sentiment2] += sentiment[1]
-            elif sentiment[0] == sentiment3:
+            elif sentiment3 and sentiment[0] == sentiment3:
                 sentimentObj[sentiment3] += sentiment[1]
 
-        if sentimentObj[sentiment1] == sentimentObj[sentiment2] == sentimentObj[sentiment3]:
-            bothSentimentsMerged['sameEvenAfterAverage'] += 1
+        if sentiment3 and sentimentObj[sentiment1] == sentimentObj[sentiment2] == sentimentObj[sentiment3]:
+            if merged: bothSentimentsMerged['allThreeSameEvenAfterAverage'] += 1
             if otherComments:
                 return getLastSentimentFromCommentList(commentsObj, sentimentObj, authorName)
             else:
-                print sentimentObj
                 bothSentimentsMerged['sameEvenAfterAverageForAuthor'] += 1
                 return max(sentimentObj, key=lambda i: sentimentObj[i])
 
-        return max(sentimentObj, key=lambda i: sentimentObj[i])
-
-    else:
-        sentimentObj = {
-            sentiment1: 0,
-            sentiment2: 0
-        }
-        for sentiment in collectiveSentimentList:
-            if sentiment[0] == sentiment1:
-                sentimentObj[sentiment1] += sentiment[1]
-            elif sentiment[0] == sentiment2:
-                sentimentObj[sentiment2] += sentiment[1]
-
-        if sentimentObj[sentiment1] == sentimentObj[sentiment2]:
-            bothSentimentsMerged['sameEvenAfterAverage'] += 1
-            if otherComments:
-                if sentiment1 == 'neg' and sentiment2 == 'neu':
-                    return sentiment1
-                elif sentiment1 == 'neu' and sentiment2 == 'neg':
-                    return sentiment2
-                elif sentiment1 == 'pos' and sentiment2 == 'neu':
-                    return sentiment1
-                elif sentiment1 == 'neu' and sentiment2 == 'pos':
-                    return sentiment2
-                elif sentiment1 in ['pos', 'neg'] and sentiment2 in ['pos', 'neg']:
+        elif sentiment3 is None and sentimentObj[sentiment1] == sentimentObj[sentiment2]:
+            if merged: bothSentimentsMerged['sameEvenAfterAverage'] += 1
+            if all(x in sentimentObj.keys() for x in ['neg', 'neu']):
+                return 'neg'
+            elif all(x in sentimentObj.keys() for x in ['pos', 'neu']):
+                return 'pos'
+            elif all(x in sentimentObj.keys() for x in ['pos', 'neg']):
+                if otherComments:
                     return getLastSentimentFromCommentList(commentsObj, sentimentObj, authorName)
-            else:
-                if sentiment1 == 'neg' and sentiment2 == 'neu':
-                    return sentiment1
-                elif sentiment1 == 'neu' and sentiment2 == 'neg':
-                    return sentiment2
-                elif sentiment1 == 'pos' and sentiment2 == 'neu':
-                    return sentiment1
-                elif sentiment1 == 'neu' and sentiment2 == 'pos':
-                    return sentiment2
-                elif sentiment1 in ['pos', 'neg'] and sentiment2 in ['pos', 'neg']:
-                    bothSentimentsMerged['posNegBothOccurredForAuthor'] += 1
-                    return max(sentimentObj, key=lambda i: sentimentObj[i])
+                if merged: bothSentimentsMerged['posNegBothOccurredForAuthor'] += 1
 
         return max(sentimentObj, key=lambda i: sentimentObj[i])
 
@@ -240,6 +195,13 @@ def cleanAndCalculateSentimentForOne(comment):
     sentimentValue = max(sentiment, key=lambda i: sentiment[i])
     return sentimentValue
 
+def updateSentimentDictsBasedOnMergedStatus(counts, dictToUpdate):
+    if counts['pos'] > 0 and counts['neg'] > 0:
+        dictToUpdate['posNeg'] += 1
+    elif counts['pos'] > 0 and counts['neu'] > 0:
+        dictToUpdate['posNeu'] += 1
+    elif counts['neg'] > 0 and counts['neu'] > 0:
+        dictToUpdate['negNeu'] += 1
 
 def cleanMessage(m):
     m = m.replace("\n", '')
